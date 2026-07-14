@@ -122,32 +122,19 @@ def select_top_persons(r, max_n):
     return np.argsort(areas)[::-1][:max_n].tolist()
 
 
-def compute_hip_angle(kp, conf):
-    """左右股関節を結ぶベクトルの角度（度）"""
-    if len(kp) <= RIGHT_HIP:
-        return None
-    if conf[LEFT_HIP] <= CONF_THRESH or conf[RIGHT_HIP] <= CONF_THRESH:
-        return None
-    if kp[LEFT_HIP][0] == 0 or kp[RIGHT_HIP][0] == 0:
-        return None
-    return np.degrees(np.arctan2(
-        kp[RIGHT_HIP][1] - kp[LEFT_HIP][1],
-        kp[RIGHT_HIP][0] - kp[LEFT_HIP][0]))
-
-
-def update_hip_angular_velocity(angle, fps, rank, prev_angles, angle_histories):
-    """腰の回転角速度（°/秒）を直近10フレームの移動平均で算出"""
-    if angle is None:
+def update_hip_angular_velocity(hip_rotation_angle, fps, rank, prev_angles, angle_histories):
+    """腰の回転角速度（°/秒）をHip Rot Angle（腰幅ベースの回転角度）の時間微分から算出し、
+    直近10フレームの移動平均で平滑化する。腰幅比率は正面/真横の区別のみで左右の向きを
+    持たないため、速度は常に非負の「回転の速さ」を表す。"""
+    if hip_rotation_angle is None:
         return None
 
     prev_angle = prev_angles[rank]
-    prev_angles[rank] = angle
+    prev_angles[rank] = hip_rotation_angle
     if prev_angle is None:
         return None
 
-    delta = angle - prev_angle
-    delta = (delta + 180) % 360 - 180  # -180〜180に正規化
-    angular_velocity = delta * fps
+    angular_velocity = abs(hip_rotation_angle - prev_angle) * fps
 
     angle_histories[rank].append(angular_velocity)
     return sum(angle_histories[rank]) / len(angle_histories[rank])
@@ -346,9 +333,6 @@ def main():
                     draw_midline(canvas, kp, conf)
 
                     if rank < len(prev_angles):
-                        hip_angle = compute_hip_angle(kp, conf)
-                        angular_velocity = update_hip_angular_velocity(
-                            hip_angle, fps, rank, prev_angles, angle_histories)
                         body_axis = compute_body_axis_angle(kp, conf)
                         balance   = compute_balance(kp, conf)
 
@@ -361,9 +345,11 @@ def main():
                             max_hip_rotation_angles[rank] = max(
                                 max_hip_rotation_angles[rank], hip_rotation_angle)
 
+                        angular_velocity = update_hip_angular_velocity(
+                            hip_rotation_angle, fps, rank, prev_angles, angle_histories)
                         if angular_velocity is not None:
                             max_angular_velocities[rank] = max(
-                                max_angular_velocities[rank], abs(angular_velocity))
+                                max_angular_velocities[rank], angular_velocity)
 
                         draw_metrics(canvas, rank, width,
                                      angular_velocity, max_angular_velocities[rank],
