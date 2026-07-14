@@ -135,9 +135,8 @@ def compute_hip_angle(kp, conf):
         kp[RIGHT_HIP][0] - kp[LEFT_HIP][0]))
 
 
-def update_hip_angular_velocity(kp, conf, fps, rank, prev_angles, angle_histories):
+def update_hip_angular_velocity(angle, fps, rank, prev_angles, angle_histories):
     """腰の回転角速度（°/秒）を直近10フレームの移動平均で算出"""
-    angle = compute_hip_angle(kp, conf)
     if angle is None:
         return None
 
@@ -219,8 +218,9 @@ def color_for_balance(left_pct):
     return (0, 0, 255)
 
 
-def draw_metrics(frame, rank, width, angular_velocity, body_axis, balance):
-    """腰回転角速度・体軸傾き・重心バランスを画面に数値表示する（英語表記、cv2.putTextは日本語非対応のため）"""
+def draw_metrics(frame, rank, width, angular_velocity, max_angular_velocity,
+                  hip_angle, max_hip_angle, body_axis, balance):
+    """腰回転角速度・腰角度・体軸傾き・重心バランスを画面に数値表示する（英語表記、cv2.putTextは日本語非対応のため）"""
     label = f'P{rank + 1}'
     x = 20 if rank == 0 else width - 300
     font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2
@@ -228,16 +228,24 @@ def draw_metrics(frame, rank, width, angular_velocity, body_axis, balance):
     if angular_velocity is None:
         text, color = f'{label} Hip Rot: ---', GRAY
     else:
-        text  = f'{label} Hip Rot: {angular_velocity:.1f} deg/s'
+        text  = (f'{label} Hip Rot: {angular_velocity:.1f} deg/s '
+                  f'(Max {max_angular_velocity:.1f})')
         color = color_for_angular_velocity(angular_velocity)
     cv2.putText(frame, text, (x, 40), font, scale, color, thickness)
+
+    if hip_angle is None:
+        text, color = f'{label} Hip Angle: ---', GRAY
+    else:
+        text  = f'{label} Hip Angle: {hip_angle:+.1f} deg (Max {max_hip_angle:.1f})'
+        color = (255, 255, 255)
+    cv2.putText(frame, text, (x, 80), font, scale, color, thickness)
 
     if body_axis is None:
         text, color = f'{label} Axis: ---', GRAY
     else:
         text  = f'{label} Axis: {body_axis:+.1f} deg'
         color = color_for_body_axis(body_axis)
-    cv2.putText(frame, text, (x, 80), font, scale, color, thickness)
+    cv2.putText(frame, text, (x, 120), font, scale, color, thickness)
 
     if balance is None:
         text, color = f'{label} Balance: ---', GRAY
@@ -245,7 +253,7 @@ def draw_metrics(frame, rank, width, angular_velocity, body_axis, balance):
         left_pct, right_pct = balance
         text  = f'{label} Balance: L{left_pct:.0f}% R{right_pct:.0f}%'
         color = color_for_balance(left_pct)
-    cv2.putText(frame, text, (x, 120), font, scale, color, thickness)
+    cv2.putText(frame, text, (x, 160), font, scale, color, thickness)
 
 
 def main():
@@ -274,6 +282,8 @@ def main():
         deque(maxlen=10),
     ]
     prev_angles = [None, None]
+    max_angular_velocities = [0.0, 0.0]
+    max_hip_angles         = [0.0, 0.0]
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -307,12 +317,22 @@ def main():
                     draw_midline(canvas, kp, conf)
 
                     if rank < len(prev_angles):
+                        hip_angle = compute_hip_angle(kp, conf)
                         angular_velocity = update_hip_angular_velocity(
-                            kp, conf, fps, rank, prev_angles, angle_histories)
+                            hip_angle, fps, rank, prev_angles, angle_histories)
                         body_axis = compute_body_axis_angle(kp, conf)
                         balance   = compute_balance(kp, conf)
+
+                        if hip_angle is not None:
+                            max_hip_angles[rank] = max(max_hip_angles[rank], abs(hip_angle))
+                        if angular_velocity is not None:
+                            max_angular_velocities[rank] = max(
+                                max_angular_velocities[rank], abs(angular_velocity))
+
                         draw_metrics(canvas, rank, width,
-                                     angular_velocity, body_axis, balance)
+                                     angular_velocity, max_angular_velocities[rank],
+                                     hip_angle, max_hip_angles[rank],
+                                     body_axis, balance)
 
             display_frame = canvas
 
