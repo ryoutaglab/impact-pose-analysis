@@ -1,5 +1,5 @@
-import sys
 import os
+import argparse
 import cv2
 import numpy as np
 from collections import deque
@@ -44,19 +44,17 @@ CONF_THRESH = 0.5
 GRAY = (128, 128, 128)
 
 
-def resolve_source(argv):
-    if len(argv) > 1:
-        return int(argv[1]) if argv[1].isdigit() else argv[1]
-    return 'sample.mp4'
-
-
-def resolve_max_persons(argv):
-    if len(argv) > 2:
-        try:
-            return max(1, int(argv[2]))
-        except ValueError:
-            pass
-    return MAX_PERSONS
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='腰回転・体軸・重心バランスを解析する姿勢解析ツール')
+    parser.add_argument('source', nargs='?', default='sample.mp4',
+                         help='動画ファイルパス、またはWebカメラ番号（省略時: sample.mp4）')
+    parser.add_argument('--persons', '-p', type=int, default=MAX_PERSONS,
+                         help=f'解析する人数（省略時: {MAX_PERSONS}）')
+    args = parser.parse_args()
+    args.source  = int(args.source) if str(args.source).isdigit() else args.source
+    args.persons = max(1, args.persons)
+    return args
 
 
 def make_output_path(source):
@@ -305,8 +303,9 @@ def draw_metrics(frame, rank, width, angular_velocity, max_angular_velocity,
 
 
 def main():
-    source      = resolve_source(sys.argv)
-    max_persons = resolve_max_persons(sys.argv)
+    args        = parse_args()
+    source      = args.source
+    max_persons = args.persons
     out_path    = make_output_path(source)
 
     model = YOLO('yolo26x-pose.pt')
@@ -331,24 +330,15 @@ def main():
 
     # 角速度の移動平均：短いウィンドウで一瞬の速い動き(パンチ等)のピークを
     # 薄めすぎないようにする（長いと素早い回転ほど過小評価されてしまう）
-    angle_histories = [
-        deque(maxlen=3),
-        deque(maxlen=3),
-    ]
+    angle_histories = [deque(maxlen=3) for _ in range(max_persons)]
     # max_hip_width（正面向きの基準値）算出用：安定性重視の長いウィンドウ
-    hip_width_histories_slow = [
-        deque(maxlen=20),
-        deque(maxlen=20),
-    ]
+    hip_width_histories_slow = [deque(maxlen=20) for _ in range(max_persons)]
     # 現在の腰幅（角度計算の分子）算出用：応答性重視の短いウィンドウ
-    hip_width_histories_fast = [
-        deque(maxlen=5),
-        deque(maxlen=5),
-    ]
-    prev_angles = [None, None]
-    max_angular_velocities  = [0.0, 0.0]
-    max_hip_widths          = [0.0, 0.0]
-    max_hip_rotation_angles = [0.0, 0.0]
+    hip_width_histories_fast = [deque(maxlen=5) for _ in range(max_persons)]
+    prev_angles             = [None] * max_persons
+    max_angular_velocities  = [0.0] * max_persons
+    max_hip_widths          = [0.0] * max_persons
+    max_hip_rotation_angles = [0.0] * max_persons
 
     while cap.isOpened():
         ret, frame = cap.read()

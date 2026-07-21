@@ -12,7 +12,24 @@ mma-pose-analysisの姉妹ツール
 - 左右重心バランス（%）
 
 ## 使い方
+
+```bash
 python pose_analysis_impact-p.py 動画ファイル名
+```
+
+引数を省略した場合は `sample.mp4` を解析します。Webカメラで解析する場合はカメラ番号（例: `0`）を渡してください。
+
+解析する人数は `--persons`（または `-p`）で指定できます（省略時は2人）。
+
+```bash
+python pose_analysis_impact-p.py 動画ファイル名 --persons 1
+```
+
+引数一覧は `-h` で確認できます。
+
+```bash
+python pose_analysis_impact-p.py -h
+```
 
 ## 関連リポジトリ
 - mma-pose-analysis
